@@ -1,0 +1,135 @@
+GenomeStrip Notes
+    module add genome_strip/2.00.1665
+
+Uses Queue workflow engine
+    module add QUEUE/3.3-0
+
+STEPS
+1. SVPreprocess
+    Computes summary metadata for a data set, required by other GenomeStrip pipelines
+    Input: 1 or more BAM files
+    Stored in metadata directory
+    Most GenomeStrip pipelines accept multiple metadata directories (batch SVPreprocess step)
+   
+    Example:
+        classpath="${SV_DIR}/lib/SVToolkit.jar:${SV_DIR}/lib/gatk/GenomeAnalysisTK.jar:${SV_DIR}/lib/gatk/Queue.jar"
+        java -Xmx4g -cp ${classpath} \
+        org.broadinstitute.gatk.queue.QCommandLine \
+        -S ${SV_DIR}/qscript/SVPreprocess.q \
+        -S ${SV_DIR}/qscript/SVQScript.q \
+        -cp ${classpath} \
+        -gatk ${SV_DIR}/lib/gatk/GenomeAnalysisTK.jar \
+        -configFile ${SV_DIR}/conf/genstrip_parameters.txt \
+        -R path_to_rmd_dir/reference_genome.fasta \
+        -I input_bam_files.list \
+        -md output_metadata_directory \
+        -bamFilesAreDisjoint true \
+        -jobLogDir logDir \
+        -run 
+
+2. SVDiscovery
+    Implements GenomeStrip deletion discovery pipeline
+        Scans genome for polymorphic sites of large deletions
+        Seeded on aberrantly spaced read pairs & then uses read depth
+
+    Example:
+        classpath="${SV_DIR}/lib/SVToolkit.jar:${SV_DIR}/lib/gatk/GenomeAnalysisTK.jar:${SV_DIR}/lib/gatk/Queue.jar"
+        java -Xmx4g -cp ${classpath} \
+        org.broadinstitute.gatk.queue.QCommandLine \
+        -S ${SV_DIR}/qscript/SVDiscovery.q \
+        -S ${SV_DIR}/qscript/SVQScript.q \
+        -cp ${classpath} \
+        -gatk ${SV_DIR}/lib/gatk/GenomeAnalysisTK.jar \
+        -configFile ${SV_DIR}/conf/genstrip_parameters.txt \
+        -R path_to_rmd_dir/reference_genome.fasta \
+        -I input_bam_files.list \
+        -genderMapFile gender_map_file.txt \
+        -md input_metadata_directory \
+        -runDirectory run1 \
+        -jobLogDir run1/logs \
+        -O run1/svdiscovery.dels.vcf \
+        -minimumSize 100 \
+        -maximumSize 100000 \
+        -run
+
+3. SVGenotyper
+    Genotypes defined set of structural variants
+    Input:a site VCF (8 column VCF containing info about potentially variant genomic sites)
+    Output: genotype VCF (input sites + called genotypes)
+        Genotypes reported as likelihoods
+        Genotypes with 95% posterior probability are reported as "confident" genotype calls
+    Supports parallel processing (-parallelRecords & -parallelJobs arguments)
+    Intermediate files directory (-runDirectory argument)
+
+    Example:
+        classpath="${SV_DIR}/lib/SVToolkit.jar:${SV_DIR}/lib/gatk/GenomeAnalysisTK.jar:${SV_DIR}/lib/gatk/Queue.jar"
+        java -Xmx4g -cp ${classpath} \
+        org.broadinstitute.gatk.queue.QCommandLine \
+        -S ${SV_DIR}/qscript/SVGenotyper.q \
+        -S ${SV_DIR}/qscript/SVQScript.q \
+        -cp ${classpath} \
+        -gatk ${SV_DIR}/lib/gatk/GenomeAnalysisTK.jar \
+        -configFile ${SV_DIR}/conf/genstrip_parameters.txt \
+        -R path_to_rmd_dir/reference_genome.fasta \
+        -I input_bam_files.list \
+        -genderMapFile gender_map_file.txt \
+        -md input_metadata_directory \
+        -runDirectory run1 \
+        -jobLogDir run1/logs \
+        -vcf input_file.sites.vcf \
+        -O run1/output_file.genotypes.vcf \
+        -parallelRecords 100 \
+        -run        
+
+4. CNVDiscoveryPipeline
+    Discovers copy number variants (seeds w/ read depth)
+    Scans overlapping windows across the gnome looking for evidence of polymorphism based on analysis of read depth coverage
+    Best window size depends on depth
+
+    For 30-40x coverage:
+        -tilingWindowSize 1000
+        -tilingWindowOverlap 500
+        -maximumReferenceGapLength 1000
+        -boundaryPrecision 100
+        -minimumRefinedLength 500
+    
+    For 6-8x coverage:
+        -tilingWindowSize 5000
+        -tilingWindowOverlap 2500
+        -maximumReferenceGapLength 2500
+        -boundaryPrecision 200
+        -minimumRefinedLength 2500
+
+    Example:
+        classpath="${SV_DIR}/lib/SVToolkit.jar:${SV_DIR}/lib/gatk/GenomeAnalysisTK.jar:${SV_DIR}/lib/gatk/Queue.jar"
+        java -Xmx4g -cp ${classpath} \
+        org.broadinstitute.gatk.queue.QCommandLine \
+        -S ${SV_DIR}/qscript/discovery/cnv/CNVDiscoveryPipeline.q \
+        -S ${SV_DIR}/qscript/SVQScript.q \
+        -cp ${classpath} \
+        -gatk ${SV_DIR}/lib/gatk/GenomeAnalysisTK.jar \
+        -configFile ${SV_DIR}/conf/genstrip_parameters.txt \
+        -R path_to_rmd_dir/reference_genome.fasta \
+        -I input_bam_files.list \
+        -genderMapFile gender_map_file.txt \
+        -md input_metadata_directory \
+        -runDirectory run1 \
+        -jobLogDir run1/logs \
+        -intervalList reference_chromosomes.list \
+        -tilingWindowSize 1000 \
+        -tilingWindowOverlap 500 \
+        -maximumReferenceGapLength 1000 \
+        -boundaryPrecision 100 \
+        -minimumRefinedLength 500 \
+        -run
+
+5. SVAnnotator (OPTIONAL)
+    SV annotation (based on GATK VariantAnnotator walker)
+    Can add annotations (INFO fields) or generate a report (tsv file) or summary reports (1 or more tsv files)
+    Many different annotators available (check GenomeStrip documentation)
+    Input: VCF
+    Requires reference sequence argument (-R)
+    Set of annotators specified with -A argument
+
+
+
