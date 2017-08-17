@@ -7,6 +7,7 @@ import os
 import sys
 import math
 import time
+import pyfaidx
 
 parser = argparse.ArgumentParser(description='Run the GATK HaplotypeCaller over multiple intervals and merge the output to a final file. Splits processing using the -L argument')
 parser.add_argument("dispatch_cmd", help="The dispatch command to be used to run the job ['']")
@@ -21,21 +22,16 @@ args = parser.parse_args()
 if not args.memory:
     args.memory = '1g'
 
-if os.path.isfile(args.reference + '.fai'):
-    fai = args.reference + '.fai'
-else:
-    sys.exit("No .fai file found for fasta file: " + args.reference + ".\nPlease create one using samtools faidx.")
-
 total_size = 0
 bp = []
 chroms = []
 
-with open(args.reference + '.fai', 'r') as f:
-    for line in f:
-        line = line.rstrip().split()
-        total_size += int(line[1])
-        chroms.append(line[0])
-        bp.append(int(line[1]))
+# will create a .fai index if needed
+with pyfaidx.Fasta(args.reference) as fasta:
+    for record in fasta:
+        total_size += len(record)
+        chroms.append(record.name)
+        bp.append(len(record))
 
 step_size = math.ceil(total_size / float(args.cores))
 #print(str(step_size))
